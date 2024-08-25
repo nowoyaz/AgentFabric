@@ -21,7 +21,3 @@ class AnthropicLLMTool:
         return chain.invoke({"input":user_prompt})
 
 
-
-llm = AnthropicLLMTool("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")
-print(llm.process_request("hi", "you are assistant"))
-

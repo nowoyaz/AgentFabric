@@ -2,17 +2,19 @@ import os
 from typing import List, Dict, Optional
 from abc import ABC, abstractmethod
 
+from operator import itemgetter
+from langchain.tools import tool
 from langchain_openai import ChatOpenAI
+from langchain.vectorstores import FAISS
 from langchain.document_loaders import CSVLoader
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.prompts import PromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema import AIMessage, HumanMessage
-from operator import itemgetter
+from langchain.schema.runnable import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.agents import Tool, AgentExecutor, create_tool_calling_agent
-from langchain.tools import tool
+from langchain.prompts import PromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
 
 class Agent(ABC):
     @abstractmethod
@@ -27,15 +29,26 @@ class LangChainAgent(Agent):
         self.tools: List[Tool] = []
         self.agent_executor: Optional[AgentExecutor] = None
 
-    def load_data_and_create_faiss(self, file_paths: List[str], source_columns: Dict[str, str]) -> None:
+    def load_data_and_create_faiss(self, file_paths: List[str], source_columns: Optional[Dict[str, str]] = None) -> None:
+        source_columns = source_columns or {}
+
         for file_path in file_paths:
-            file_name = os.path.basename(file_path).split('.')[0]
-            source_column = source_columns.get(file_name)
-            if not source_column:
-                raise ValueError(f"Source column for {file_name} not provided.")
-            
-            loader = CSVLoader(file_path=file_path, source_column=source_column)
-            data = loader.load()
+            file_name = os.path.basename(file_path)
+            file_extension = os.path.splitext(file_name)[1].lower()
+            file_name = os.path.splitext(file_name)[0].lower()
+
+            if file_extension == '.csv':
+                source_column = source_columns.get(file_name.split('.')[0])
+                if not source_column:
+                    raise ValueError(f"Source column for {file_name} not provided.")
+                loader = CSVLoader(file_path=file_path, source_column=source_column)
+                data = loader.load()
+            elif file_extension == '.pdf':
+                loader = PyPDFLoader(file_path)
+                data = loader.load_and_split()
+            else:
+                raise ValueError(f"Unsupported file format: {file_extension}. Only .csv and .pdf files are supported.")
+
             self.vectorstores[file_name] = FAISS.from_documents(data, self.embeddings)
 
     def generate_tools(self, 
